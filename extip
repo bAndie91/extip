@@ -1,0 +1,173 @@
+#!/usr/bin/env perl
+
+use IO::Socket::INET;
+use IO::Select;
+use Data::Dumper;
+use threads 'exit'=>'threads_only';
+use warnings;
+use Getopt::Long;
+
+
+$Timeout = 2.5;
+$details = 0;
+$quiet_http = 0;
+$Selector = IO::Select->new();
+
+$URL = [qw{
+ myexternalip.com/raw
+ curlmyip.com
+ ident.me
+ tnx.nl/ip
+ ipecho.net/plain
+ ip.appspot.com
+ whatismyip.akamai.com
+ wtfismyip.com/text
+ ipof.in/txt
+ bot.whatismyipaddress.com
+ wgetip.com
+ ip.tyk.nu
+ ifconfig.me/ip
+ icanhazip.com
+ corz.org/ip
+}];
+
+
+
+sub mainthread
+{
+	my ($host, $path, $writer) = @_;
+	my $self = threads->self();
+	my $socket;
+
+	$socket = IO::Socket::INET->new($host . ':80');
+	print {$socket} join "\r\n",
+		"GET $path HTTP/1.0",
+		"Host: $host",
+		"Accept: */*",
+		"", "";
+
+	my $status;
+	my $eoh;
+	my $result;
+	
+	while(my $ln = <$socket>)
+	{
+		$ln =~ s/\s*$//;
+			
+		if(not defined $status)
+		{
+			($status->{code}, $status->{msg}) = ($ln =~ /^\S+\s+(\S+)\s*(.*)$/);
+		}
+		
+		if($status->{code} eq '200')
+		{
+			if($eoh)
+			{
+				$result = $ln;
+				printf {$writer} "%d 1 %s\n", $self->tid, $result;
+				close $writer;
+				return;
+			}
+			elsif($ln =~ /^[\r\n]*$/)
+			{
+				$eoh = 1;
+			}
+		}
+		else
+		{
+			printf {$writer} "%d 0 %s %s\n", $self->tid, $status->{code}, $status->{msg};
+		}
+	}
+}
+
+
+GetOptions(
+	'T|timeout=f' => \$Timeout,
+	'd|details!' => \$details,
+	'q|quiet!' => \$quiet_http,
+	'u|url=s@' => \$URL,
+	'h|help' => sub {
+		print "Options:
+ -T, --timeout FLOAT     Last response's timeout ($Timeout)
+ -d, --details           Display each service's response (off)
+ -q, --quiet             Suppress HTTP errors (off)
+ -u, --url URL URL ...   Define extip services (@$URL)
+";
+		exit 0;
+	},
+) or die;
+
+
+for my $url (@$URL)
+{
+	my ($host, $path) = ($url =~ /^([^\/]+)(.*)$/);
+	$path = '/' if not $path;
+	my $rdr;
+	my $wtr;
+	pipe $rdr, $wtr;
+	my $thr = threads->create(\&mainthread, $host, $path, $wtr);
+	push @SRC, {url=>$url, host=>$host, path=>$path, thr=>$thr, reader=>$rdr};
+}
+
+for my $src (@SRC)
+{
+	$Selector->add($src->{reader});
+}
+
+
+
+while(my @ready = $Selector->can_read($Timeout))
+{
+	for my $fhnd (@ready)
+	{
+		if(eof($fhnd))
+		{
+			$Selector->remove($fhnd);
+		}
+		else
+		{
+			my ($tid, $ok, $result) = split /\s+/, <$fhnd>, 3;
+			$result =~ s/\s*$//;
+			
+			for my $src (@SRC)
+			{
+				if($src->{reader} eq $fhnd)
+				{
+					if($ok)
+					{
+						$Result{$result}++;
+						if($details)
+						{
+							printf "%s\t%s\n", $src->{url}, $result;
+						}
+					}
+					else
+					{
+						if(!$quiet_http)
+						{
+							printf STDERR "%s\t%s\n", $src->{url}, $result;
+						}
+					}
+					last;
+				}
+			}
+		}
+	}
+}
+
+
+for my $src (@SRC)
+{
+	$src->{thr}->detach;
+}
+
+
+if(%Result)
+{
+	print((sort {$Result{$b} <=> $Result{$a}} keys %Result)[0], "\n");
+}
+else
+{
+	exit 1;
+}
+
