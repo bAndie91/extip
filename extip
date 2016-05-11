@@ -1,11 +1,14 @@
 #!/usr/bin/env perl
 
 use IO::Socket::INET;
+use IO::Socket::SSL;
 use IO::Select;
 use Data::Dumper;
 use threads 'exit'=>'threads_only';
 use warnings;
 use Getopt::Long;
+use Time::HiRes 'gettimeofday';
+use feature 'switch';
 
 
 $Timeout = 2.5;
@@ -16,8 +19,8 @@ $Selector = IO::Select->new();
 $URL = [qw{
  myexternalip.com/raw
  curlmyip.com
- ident.me
- tnx.nl/ip
+ ident.me:80
+ https://tnx.nl/ip
  ipecho.net/plain
  ip.appspot.com
  whatismyip.akamai.com
@@ -35,11 +38,34 @@ $URL = [qw{
 
 sub mainthread
 {
-	my ($host, $path, $writer) = @_;
+	my ($schema, $host, $port, $path, $writer) = @_;
 	my $self = threads->self();
 	my $socket;
+	my $module;
 
-	$socket = IO::Socket::INET->new($host . ':80');
+	if(not defined $port)
+	{
+		(undef, undef, $port, undef) = getservbyname $schema, 'tcp';
+	}
+	
+	given($schema)
+	{
+		when('http')
+		{
+			$module = IO::Socket::INET;
+		}
+		when('https')
+		{
+			$module = IO::Socket::SSL;
+		}
+	}
+	$socket = $module->new($host . ':' . $port);
+	if(not defined $socket)
+	{
+		printf {$writer} "%d 0 0 $!\n", $self->tid;
+		close $writer;
+		return;
+	}
 	print {$socket} join "\r\n",
 		"GET $path HTTP/1.0",
 		"Host: $host",
@@ -65,8 +91,7 @@ sub mainthread
 			{
 				$result = $ln;
 				printf {$writer} "%d 1 %s\n", $self->tid, $result;
-				close $writer;
-				return;
+				last;
 			}
 			elsif($ln =~ /^[\r\n]*$/)
 			{
@@ -76,8 +101,10 @@ sub mainthread
 		else
 		{
 			printf {$writer} "%d 0 %s %s\n", $self->tid, $status->{code}, $status->{msg};
+			last;
 		}
 	}
+	close $writer;
 }
 
 
@@ -88,7 +115,7 @@ GetOptions(
 	'u|url=s@' => \$URL,
 	'h|help' => sub {
 		print "Options:
- -T, --timeout FLOAT     Last response's timeout ($Timeout)
+ -T, --timeout FLOAT     Overall timeout waiting for responses ($Timeout)
  -d, --details           Display each service's response (off)
  -q, --quiet             Suppress HTTP errors (off)
  -u, --url URL URL ...   Define extip services (@$URL)
@@ -100,13 +127,14 @@ GetOptions(
 
 for my $url (@$URL)
 {
-	my ($host, $path) = ($url =~ /^([^\/]+)(.*)$/);
-	$path = '/' if not $path;
+	my ($schema, $host, $port, $path) = ($url =~ m{^(?:([^:/]+)://)?([^:/]+)(?::(\d+))?(.*)$});
+	$schema ||= 'http';
+	$path ||= '/';
 	my $rdr;
 	my $wtr;
 	pipe $rdr, $wtr;
-	my $thr = threads->create(\&mainthread, $host, $path, $wtr);
-	push @SRC, {url=>$url, host=>$host, path=>$path, thr=>$thr, reader=>$rdr};
+	my $thr = threads->create(\&mainthread, $schema, $host, $port, $path, $wtr);
+	push @SRC, {url=>$url, thr=>$thr, reader=>$rdr};
 }
 
 for my $src (@SRC)
@@ -116,8 +144,12 @@ for my $src (@SRC)
 
 
 
+$t0 = gettimeofday;
 while(my @ready = $Selector->can_read($Timeout))
 {
+	$Timeout -= (gettimeofday - $t0);
+	$t0 = gettimeofday;
+	
 	for my $fhnd (@ready)
 	{
 		if(eof($fhnd))
