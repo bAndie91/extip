@@ -16,10 +16,10 @@ $details = 0;
 $quiet_http = 0;
 $Selector = IO::Select->new();
 
-$URL = [qw{
+@URL = qw{
  myexternalip.com/raw
  curlmyip.com
- ident.me:80
+ ident.me
  https://tnx.nl/ip
  ipecho.net/plain
  ip.appspot.com
@@ -32,7 +32,7 @@ $URL = [qw{
  ifconfig.me/ip
  icanhazip.com
  corz.org/ip
-}];
+};
 
 
 
@@ -112,20 +112,20 @@ GetOptions(
 	'T|timeout=f' => \$Timeout,
 	'd|details!' => \$details,
 	'q|quiet!' => \$quiet_http,
-	'u|url=s@' => \$URL,
+	'u|url=s@' => \@URL,
 	'h|help' => sub {
 		print "Options:
  -T, --timeout FLOAT     Overall timeout waiting for responses ($Timeout)
  -d, --details           Display each service's response (off)
  -q, --quiet             Suppress HTTP errors (off)
- -u, --url URL URL ...   Define extip services (@$URL)
+ -u, --url URL URL ...   Define extip services (@URL)
 ";
 		exit 0;
 	},
 ) or die;
 
 
-for my $url (@$URL)
+for my $url (@URL)
 {
 	my ($schema, $host, $port, $path) = ($url =~ m{^(?:([^:/]+)://)?([^:/]+)(?::(\d+))?(.*)$});
 	$schema ||= 'http';
