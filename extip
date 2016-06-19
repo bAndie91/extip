@@ -112,7 +112,7 @@ GetOptions(
 	'T|timeout=f' => \$Timeout,
 	'd|details!' => \$details,
 	'q|quiet!' => \$quiet_http,
-	'u|url=s@' => \@URL,
+	'u|url=s{1,}' => \@UserURL,
 	'h|help' => sub {
 		print "Options:
  -T, --timeout FLOAT     Overall timeout waiting for responses ($Timeout)
@@ -124,6 +124,10 @@ GetOptions(
 	},
 ) or die;
 
+if(@UserURL)
+{
+	@URL = @UserURL;
+}
 
 for my $url (@URL)
 {
