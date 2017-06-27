@@ -1,0 +1,95 @@
+#!/bin/bash
+
+set -u
+#extipfile=/var/run/firewall/extip
+#statusfile=/var/run/monitor-isp
+#router=gateway.localhost
+#usr=
+#pwd=
+#chk_next_hop=1
+#maxfail=5
+. /etc/monitor-isp.conf
+
+
+refresh_hostfile()
+{
+	local ip=$1
+	local name=$2
+	local name_re=${name//./\\.}
+	
+	oldname=`getent -s files hosts "$name"`
+	if [ "$oldname" = "$name" ]
+	then
+		return
+	fi
+	
+	exec 3>/var/run/hostsfile.lock
+	flock -x 3
+	if grep -qE '^\S+\s+'$name_re'$' /etc/hosts
+	then
+		sed -i /etc/hosts -e 's/^\S\+\(\s\+'$name_re'\)$/'$ip'\1/'
+	else
+		echo "$ip	$name" >>/etc/hosts
+	fi
+	flock -u 3
+	exec 3>&-
+}
+
+
+extipdir=`dirname "$extipfile"`
+[ -d "$extipdir" ] || mkdir -p "$extipdir"
+
+
+# =========================
+# Save reported external IP
+
+#extip=`upnp-extip-cisco-epc3925`
+extip=`extip -u myexternalip.com/raw ident.me https://tnx.nl/ip ipecho.net/plain whatismyip.akamai.com wtfismyip.com/text ipof.in/txt bot.whatismyipaddress.com wgetip.com ip.tyk.nu ifconfig.me/ip icanhazip.com`
+cur_extip=`cat "$extipfile"`
+
+if [ -n "$extip" -a "$extip" != "$cur_extip" ]
+then
+	echo "Update External IP $cur_extip to $extip"
+	echo -n "$extip" >"$extipfile"
+	/etc/tuzfalam/postrun-extip
+fi
+
+
+# ==============================
+# Check next hop in front of HGW
+
+if [ $chk_next_hop = 1 ]
+then
+	declare -a rtrargs
+	#rtrargs=(-I "$router" -U "$usr" -P "$pwd")
+	#nextgw=`epc3925 "${rtrargs[@]}" next-gw`
+	rtrargs=(-h "$router" -u "$usr" -P "$pwd")
+	nextgw=`ZXHN-H108L "${rtrargs[@]}" info gw`
+	
+	if [ -n "$nextgw" ]
+	then
+		refresh_hostfile "$nextgw" nexthop.localhost
+		
+		output=`ping -n -W 5 -c 1 "$nextgw" 2>&1`
+		code=$?
+		if [ $code = 0 ]
+		then
+			[ ! -e "$statusfile" ] || rm "$statusfile"
+		else
+			echo "$output" | sed -e '/^\(-\|$\)/d' >&2
+			echo "[$(date)] ping $nextgw error=$code" >>"$statusfile"
+		fi
+	else
+		echo "Next gateway is unknown." >&2
+		exit 1
+	fi
+	
+	if [ -s "$statusfile" ] && [ `sed -n '$=' "$statusfile"` -gt "$maxfail" ]
+	then
+		echo "Rebooting router." >&2
+		#epc3925 "${rtrargs[@]}" reboot
+		ZXHN-H108L "${rtrargs[@]}" reboot
+		true >"$statusfile"
+	fi
+fi
+
