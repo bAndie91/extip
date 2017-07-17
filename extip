@@ -32,6 +32,7 @@ $Selector = IO::Select->new();
  ifconfig.me/ip
  icanhazip.com
  corz.org/ip
+ ipinfo.io/ip
 };
 
 
