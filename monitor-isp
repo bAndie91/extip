@@ -44,7 +44,7 @@ extipdir=`dirname "$extipfile"`
 # Save reported external IP
 
 #extip=`upnp-extip-cisco-epc3925`
-extip=`extip -u myexternalip.com/raw ident.me https://tnx.nl/ip ipecho.net/plain whatismyip.akamai.com wtfismyip.com/text ipof.in/txt bot.whatismyipaddress.com wgetip.com ip.tyk.nu ifconfig.me/ip icanhazip.com`
+extip=`extip -R curlmyip.com ip.appspot.com ipof.in/txt corz.org/ip`
 cur_extip=`cat "$extipfile"`
 
 if [ -n "$extip" -a "$extip" != "$cur_extip" ]
@@ -66,7 +66,7 @@ then
 	rtrargs=(-h "$router" -u "$usr" -P "$pwd")
 	nextgw=`ZXHN-H108L "${rtrargs[@]}" info gw`
 	
-	if [ -n "$nextgw" ]
+	if [ -n "$nextgw" -a "$nextgw" != 0.0.0.0 ]
 	then
 		refresh_hostfile "$nextgw" nexthop.localhost
 		

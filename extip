@@ -114,12 +114,20 @@ GetOptions(
 	'd|details!' => \$details,
 	'q|quiet!' => \$quiet_http,
 	'u|url=s{1,}' => \@UserURL,
+	'A|add-url=s{1,}' => sub {
+		unshift @URL, $_[1];
+	},
+	'R|remove-url=s{1,}' => sub {
+		@URL = grep {$_ ne $_[1]} @URL;
+	},
 	'h|help' => sub {
 		print "Options:
  -T, --timeout FLOAT     Overall timeout waiting for responses ($Timeout)
  -d, --details           Display each service's response (off)
  -q, --quiet             Suppress HTTP errors (off)
  -u, --url URL URL ...   Define extip services (@URL)
+ -A, --add-url URL ...   Add extip services to the base set
+ -R, --remove-url URL ...    Remove extip services from the base set
 ";
 		exit 0;
 	},
