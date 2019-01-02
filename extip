@@ -33,6 +33,7 @@ $Selector = IO::Select->new();
  icanhazip.com
  corz.org/ip
  ipinfo.io/ip
+ https://simplesniff.com/ip
 };
 
 
