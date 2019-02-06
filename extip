@@ -22,7 +22,6 @@ $Selector = IO::Select->new();
  ident.me
  https://tnx.nl/ip
  ipecho.net/plain
- ip.appspot.com
  whatismyip.akamai.com
  wtfismyip.com/text
  ipof.in/txt
@@ -34,6 +33,7 @@ $Selector = IO::Select->new();
  corz.org/ip
  ipinfo.io/ip
  https://simplesniff.com/ip
+ api.ipify.org?format=text
 };
 
 
