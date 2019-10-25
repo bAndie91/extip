@@ -9,6 +9,7 @@ use warnings;
 use Getopt::Long;
 use Time::HiRes 'gettimeofday';
 use feature 'switch';
+use Net::DNS;
 
 
 $Timeout = 2.5;
@@ -33,21 +34,19 @@ $Selector = IO::Select->new();
  ipinfo.io/ip
  https://simplesniff.com/ip
  ip.42.pl/raw
+ dns@ns1.google.com:o-o.myaddr.l.google.com/TXT
+ dns@ns1-1.akamaitech.net:whoami.akamai.net/A
+ https://1.1.1.1/cdn-cgi/trace|cloudflare_trace
 };
 
 
 
 sub mainthread
 {
-	my ($schema, $host, $port, $path, $writer) = @_;
+	my ($schema, $host, $port, $path, $filter, $writer) = @_;
 	my $self = threads->self();
 	my $socket;
 	my $module;
-
-	if(not defined $port)
-	{
-		(undef, undef, $port, undef) = getservbyname $schema, 'tcp';
-	}
 	
 	given($schema)
 	{
@@ -60,52 +59,103 @@ sub mainthread
 			$module = IO::Socket::SSL;
 		}
 	}
-	$socket = $module->new($host . ':' . $port);
-	if(not defined $socket)
-	{
-		printf {$writer} "%d 0 0 $!\n", $self->tid;
-		close $writer;
-		return;
-	}
-	print {$socket} join "\r\n",
-		"GET $path HTTP/1.0",
-		"Host: $host",
-		"Accept: */*",
-		"", "";
-
-	my $status;
-	my $eoh;
-	my $result;
 	
-	while(my $ln = <$socket>)
+	given($schema)
 	{
-		$ln =~ s/\s*$//;
-			
-		if(not defined $status)
+		when(/^https?$/)
 		{
-			($status->{code}, $status->{msg}) = ($ln =~ /^\S+\s+(\S+)\s*(.*)$/);
-		}
-		
-		if($status->{code} eq '200')
-		{
-			if($eoh)
-			{
-				$result = $ln;
-				printf {$writer} "%d 1 %s\n", $self->tid, $result;
-				last;
-			}
-			elsif($ln =~ /^[\r\n]*$/)
-			{
-				$eoh = 1;
-			}
-		}
-		else
-		{
-			printf {$writer} "%d 0 %s %s\n", $self->tid, $status->{code}, $status->{msg};
-			last;
-		}
+			my (undef, undef, $port, undef) = getservbyname $schema, 'tcp' if not defined $port;
+	 		$socket = $module->new($host . ':' . $port);
+	 		if(not defined $socket)
+	 		{
+	 			printf {$writer} "%d 0 0 $!\n", $self->tid;
+	 			close $writer;
+	 			return;
+	 		}
+	 		print {$socket} join "\r\n",
+	 			"GET $path HTTP/1.0",
+	 			"Host: $host",
+	 			"Accept: */*",
+	 			"", "";
+	 		
+	 		my $status;
+	 		my $eoh;
+	 		my $result;
+	 		
+	 		while(my $ln = <$socket>)
+	 		{
+	 			$ln =~ s/\s*$//;
+	 				
+	 			if(not defined $status)
+	 			{
+	 				($status->{code}, $status->{msg}) = ($ln =~ /^\S+\s+(\S+)\s*(.*)$/);
+	 			}
+	 			
+	 			if($status->{code} eq '200')
+	 			{
+	 				if($eoh)
+	 				{
+	 					$result = $ln;
+	 					printf {$writer} "%d 1 %s\n", $self->tid, $result;
+	 					last;
+	 				}
+	 				elsif($ln =~ /^[\r\n]*$/)
+	 				{
+	 					$eoh = 1;
+	 				}
+	 			}
+	 			else
+	 			{
+	 				printf {$writer} "%d 0 %s %s\n", $self->tid, $status->{code}, $status->{msg};
+	 				last;
+	 			}
+	 		}
+	 	}
+	 	when(/^dns(\@|$)/)
+	 	{
+	 		my ($nameserver) = ($schema =~ /\@(.+)/);
+	 		my ($record_type) = ($path =~ /^\/(.+)/);
+	 		
+	 		my $dns = Net::DNS::Resolver->new;
+	 		$dns->nameservers($nameserver) if defined $nameserver;
+	 		my $reply = $dns->query($host, $record_type);
+	 		if($reply)
+	 		{
+	 			my $n = 0;
+	 			for my $rr ($reply->answer)
+	 			{
+	 				my $result;
+	 				given($record_type)
+	 				{
+	 					when('TXT') { $result = $rr->{'rdata'}; }
+			 			default { $result = $rr->{'address'}; }
+			 		}
+			 		if(defined $result)
+			 		{
+		 				printf {$writer} "%d 1 %s\n", $self->tid, $result;
+		 				$n++;
+		 			}
+	 			}
+	 			if($n == 0)
+	 			{
+		 			printf {$writer} "%d 0 only records found: %s\n", $self->tid, join "; ", map {sprintf "%s %s %s %s", $_->name, $_->class, $_->type, strrepl($_->rdata,"\n","\\n")} $reply->answer;
+	 			}
+	 		}
+	 		else
+	 		{
+	 			printf {$writer} "%d 0 %s\n", $self->tid, $dns->errorstring;
+	 		}
+	 	}
 	}
+	
 	close $writer;
+}
+
+sub strrepl
+{
+	my ($str, $patt, $repl) = @_;
+	$str =~ s/\Q$patt\E/$repl/g;
+	return $str;
 }
 
 
@@ -140,13 +190,13 @@ if(@UserURL)
 
 for my $url (@URL)
 {
-	my ($schema, $host, $port, $path) = ($url =~ m{^(?:([^:/]+)://)?([^:/]+)(?::(\d+))?(.*)$});
+	my ($schema, $host, $port, $path, $filter) = ($url =~ m{^(?:([^:/]+):(?://)?)?([^:/]+)(?::(\d+))?(.*?)(?:\|(.+))?$});
 	$schema ||= 'http';
 	$path ||= '/';
 	my $rdr;
 	my $wtr;
 	pipe $rdr, $wtr;
-	my $thr = threads->create(\&mainthread, $schema, $host, $port, $path, $wtr);
+	my $thr = threads->create(\&mainthread, $schema, $host, $port, $path, $filter, $wtr);
 	push @SRC, {url=>$url, thr=>$thr, reader=>$rdr};
 }
 
@@ -209,10 +259,10 @@ for my $src (@SRC)
 
 if(%Result)
 {
+	# display that result which is returned by the most thread
 	print((sort {$Result{$b} <=> $Result{$a}} keys %Result)[0], "\n");
 }
 else
 {
 	exit 1;
 }
-
