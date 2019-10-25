@@ -24,7 +24,6 @@ $Selector = IO::Select->new();
  ipecho.net/plain
  whatismyip.akamai.com
  wtfismyip.com/text
- ipof.in/txt
  bot.whatismyipaddress.com
  wgetip.com
  ip.tyk.nu
@@ -33,7 +32,7 @@ $Selector = IO::Select->new();
  corz.org/ip
  ipinfo.io/ip
  https://simplesniff.com/ip
- api.ipify.org?format=text
+ ip.42.pl/raw
 };
 
 
