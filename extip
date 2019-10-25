@@ -36,7 +36,7 @@ $Selector = IO::Select->new();
  ip.42.pl/raw
  dns@ns1.google.com:o-o.myaddr.l.google.com/TXT
  dns@ns1-1.akamaitech.net:whoami.akamai.net/A
- https://1.1.1.1/cdn-cgi/trace|cloudflare_trace
+ 1.1.1.1/cdn-cgi/trace|cloudflare_trace
 };
 
 
@@ -65,87 +65,87 @@ sub mainthread
 		when(/^https?$/)
 		{
 			my (undef, undef, $port, undef) = getservbyname $schema, 'tcp' if not defined $port;
-	 		$socket = $module->new($host . ':' . $port);
-	 		if(not defined $socket)
-	 		{
-	 			printf {$writer} "%d 0 0 $!\n", $self->tid;
-	 			close $writer;
-	 			return;
-	 		}
-	 		print {$socket} join "\r\n",
-	 			"GET $path HTTP/1.0",
-	 			"Host: $host",
-	 			"Accept: */*",
-	 			"", "";
-	 		
-	 		my $status;
-	 		my $eoh;
-	 		my $result;
-	 		
-	 		while(my $ln = <$socket>)
-	 		{
-	 			$ln =~ s/\s*$//;
-	 				
-	 			if(not defined $status)
-	 			{
-	 				($status->{code}, $status->{msg}) = ($ln =~ /^\S+\s+(\S+)\s*(.*)$/);
-	 			}
-	 			
-	 			if($status->{code} eq '200')
-	 			{
-	 				if($eoh)
-	 				{
-	 					$result = $ln;
-	 					printf {$writer} "%d 1 %s\n", $self->tid, $result;
-	 					last;
-	 				}
-	 				elsif($ln =~ /^[\r\n]*$/)
-	 				{
-	 					$eoh = 1;
-	 				}
-	 			}
-	 			else
-	 			{
-	 				printf {$writer} "%d 0 %s %s\n", $self->tid, $status->{code}, $status->{msg};
-	 				last;
-	 			}
-	 		}
-	 	}
-	 	when(/^dns(\@|$)/)
-	 	{
-	 		my ($nameserver) = ($schema =~ /\@(.+)/);
-	 		my ($record_type) = ($path =~ /^\/(.+)/);
-	 		
-	 		my $dns = Net::DNS::Resolver->new;
-	 		$dns->nameservers($nameserver) if defined $nameserver;
-	 		my $reply = $dns->query($host, $record_type);
-	 		if($reply)
-	 		{
-	 			my $n = 0;
-	 			for my $rr ($reply->answer)
-	 			{
-	 				my $result;
-	 				given($record_type)
-	 				{
-	 					when('TXT') { $result = $rr->{'rdata'}; }
-			 			default { $result = $rr->{'address'}; }
-			 		}
-			 		if(defined $result)
-			 		{
-		 				printf {$writer} "%d 1 %s\n", $self->tid, $result;
-		 				$n++;
-		 			}
-	 			}
-	 			if($n == 0)
-	 			{
-		 			printf {$writer} "%d 0 only records found: %s\n", $self->tid, join "; ", map {sprintf "%s %s %s %s", $_->name, $_->class, $_->type, strrepl($_->rdata,"\n","\\n")} $reply->answer;
-	 			}
-	 		}
-	 		else
-	 		{
-	 			printf {$writer} "%d 0 %s\n", $self->tid, $dns->errorstring;
-	 		}
-	 	}
+			$socket = $module->new($host . ':' . $port);
+			if(not defined $socket)
+			{
+				printf {$writer} "%d 0 0 $!\n", $self->tid;
+				close $writer;
+				return;
+			}
+			print {$socket} join "\r\n",
+				"GET $path HTTP/1.0",
+				"Host: $host",
+				"Accept: */*",
+				"", "";
+			
+			my $status;
+			my $eoh;
+			
+			while(1)
+			{
+				if($eoh)
+				{
+					printf {$writer} "%d 1 %s\n", $self->tid, $filter->($socket);
+					last;
+				}
+				else
+				{
+					my $ln = <$socket>;
+					$ln =~ s/\s*$//;
+					
+					if(not defined $status)
+					{
+						($status->{code}, $status->{msg}) = ($ln =~ /^\S+\s+(\S+)\s*(.*)$/);
+					}
+					
+					if(not $status->{code} ~~ ['200'])
+					{
+						printf {$writer} "%d 0 %s %s\n", $self->tid, $status->{code}, $status->{msg};
+						last;
+					}
+					
+					if($ln =~ /^[\r\n]*$/)
+					{
+						$eoh = 1;
+					}
+				}
+			}
+		}
+		when(/^dns(\@|$)/)
+		{
+			my ($nameserver) = ($schema =~ /\@(.+)/);
+			my ($record_type) = ($path =~ /^\/(.+)/);
+			
+			my $dns = Net::DNS::Resolver->new;
+			$dns->nameservers($nameserver) if defined $nameserver;
+			my $reply = $dns->query($host, $record_type);
+			if($reply)
+			{
+				my $n = 0;
+				for my $rr ($reply->answer)
+				{
+					my $result;
+					given($record_type)
+					{
+						when('TXT') { $result = $rr->{'rdata'}; }
+						default { $result = $rr->{'address'}; }
+					}
+					if(defined $result)
+					{
+						printf {$writer} "%d 1 %s\n", $self->tid, $result;
+						$n++;
+					}
+				}
+				if($n == 0)
+				{
+					printf {$writer} "%d 0 only records found: %s\n", $self->tid, join "; ", map {sprintf "%s %s %s %s", $_->name, $_->class, $_->type, strrepl($_->rdata,"\n","\\n")} $reply->answer;
+				}
+			}
+			else
+			{
+				printf {$writer} "%d 0 %s\n", $self->tid, $dns->errorstring;
+			}
+		}
 	}
 	
 	close $writer;
@@ -157,6 +157,28 @@ sub strrepl
 	$str =~ s/\Q$patt\E/$repl/g;
 	return $str;
 }
+
+sub firstline
+{
+	my $sock = shift;
+	my $ln = <$sock>;
+	$ln =~ s/\s*$//;
+	return $ln;
+}
+
+sub cloudflare_trace
+{
+	my $sock = shift;
+	while(<$sock>)
+	{
+		if(/^ip=(\S+)/)
+		{
+			return $1;
+			last;
+		}
+	}
+}
+
 
 
 GetOptions(
@@ -190,9 +212,13 @@ if(@UserURL)
 
 for my $url (@URL)
 {
-	my ($schema, $host, $port, $path, $filter) = ($url =~ m{^(?:([^:/]+):(?://)?)?([^:/]+)(?::(\d+))?(.*?)(?:\|(.+))?$});
+	my ($url, $filter) = split /\|/, $url, 2;
+	my ($schema, $host, $port, $path) = ($url =~ m{^(?:([^:/]+):(?://)?)?([^:/]+)(?::(\d+))?(.*)$});
 	$schema ||= 'http';
 	$path ||= '/';
+	$filter ||= "firstline";
+	$filter = \&{$filter};
+	
 	my $rdr;
 	my $wtr;
 	pipe $rdr, $wtr;
@@ -223,6 +249,8 @@ while(my @ready = $Selector->can_read($Timeout))
 		{
 			my ($tid, $ok, $result) = split /\s+/, <$fhnd>, 3;
 			$result =~ s/\s*$//;
+			
+			$ok = 0 if not $result;
 			
 			for my $src (@SRC)
 			{
