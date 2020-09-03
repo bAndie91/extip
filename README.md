@@ -13,3 +13,6 @@ It queries servers in parallel, so returns faster.
  -A, --add-url URL ...   Add extip services to the base set
  -R, --remove-url URL ...    Remove extip services from the base set
 ```
+
+# issues
+Please submit issues via PR to some file `issue/TITLE.txt`.
