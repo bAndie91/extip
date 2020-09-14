@@ -15,4 +15,4 @@ It queries servers in parallel, so returns faster.
 ```
 
 # issues
-Please submit issues via PR to some file `issue/TITLE.txt`.
+Please submit issues via PR to some file `<TITLE>.txt` or `<TITLE>.md` on `issues` branch.
