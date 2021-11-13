@@ -36,7 +36,7 @@ $Selector = IO::Select->new();
  ip.42.pl/raw
  dns@ns1.google.com:o-o.myaddr.l.google.com/TXT
  dns@ns1-1.akamaitech.net:whoami.akamai.net/A
- 1.1.1.1/cdn-cgi/trace|cloudflare_trace
+ https://1.1.1.1/cdn-cgi/trace|cloudflare_trace
 };
 
 
