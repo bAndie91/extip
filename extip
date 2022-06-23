@@ -34,9 +34,11 @@ $Selector = IO::Select->new();
  ipinfo.io/ip
  https://simplesniff.com/ip
  ip.42.pl/raw
- dns@ns1.google.com:o-o.myaddr.l.google.com/TXT
- dns@ns1-1.akamaitech.net:whoami.akamai.net/A
+ dns://ns1.google.com/o-o.myaddr.l.google.com/TXT
+ dns://ns1-1.akamaitech.net/whoami.akamai.net/A
  https://1.1.1.1/cdn-cgi/trace|cloudflare_trace
+ dns://dns.toys/ip./TXT
+ dns://ns.sslip.io/ip.sslip.io/TXT
 };
 
 
@@ -111,14 +113,14 @@ sub mainthread
 				}
 			}
 		}
-		when(/^dns(\@|$)/)
+		when(/^dns$/)
 		{
-			my ($nameserver) = ($schema =~ /\@(.+)/);
-			my ($record_type) = ($path =~ /^\/(.+)/);
+			my ($nameserver) = $host;
+			my ($record_name, $record_type) = ($path =~ /^\/(.+?)\/(.+)/);
 			
 			my $dns = Net::DNS::Resolver->new;
-			$dns->nameservers($nameserver) if defined $nameserver;
-			my $reply = $dns->query($host, $record_type);
+			$dns->nameservers($nameserver) if $nameserver ne '-';
+			my $reply = $dns->query($record_name, $record_type);
 			if($reply)
 			{
 				my $n = 0;
