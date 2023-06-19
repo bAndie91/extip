@@ -39,6 +39,7 @@ $Selector = IO::Select->new();
  https://1.1.1.1/cdn-cgi/trace|cloudflare_trace
  dns://dns.toys/ip./TXT
  dns://ns.sslip.io/ip.sslip.io/TXT
+ dns://resolver1.opendns.com/myip.opendns.com/A
 };
 
 
