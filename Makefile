@@ -3,7 +3,7 @@ source = ./extip
 target = /usr/bin/extip
 
 all:
-	true
+	@echo Enter \'make install\' to install.
 
 test:
 	perl -c $(source)
@@ -16,3 +16,5 @@ uninstall:
 
 check-install:
 	cmp $(source) $(target)
+
+.PHONY: all test install uninstall check-install

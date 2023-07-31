@@ -40,6 +40,10 @@ $Selector = IO::Select->new();
  dns://dns.toys/ip./TXT
  dns://ns.sslip.io/ip.sslip.io/TXT
  dns://resolver1.opendns.com/myip.opendns.com/A
+ ip4.me/api/|csv2
+ ip4only.me/api/|csv2
+ ip6.me/api/|csv2
+ ip6only.me/api/|csv2
 };
 
 
@@ -182,6 +186,14 @@ sub cloudflare_trace
 	}
 }
 
+sub csv2
+{
+	my $sock = shift;
+	my $record = <$sock>;
+	chomp $record;
+	$record =~ /^[^,]*,([^,]*)/;
+	return $1;
+}
 
 
 GetOptions(
